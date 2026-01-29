@@ -101,18 +101,18 @@ PARTY_COLS = [
 DEFAULT_DESC_RULES = [
     {"keyword": "주유소", "value": "수행주유비", "job": ""},
     {"keyword": "택시", "value": "수행택시비", "job": ""},
-    {"keyword": "쏘카", "value": "수행교통비", "job": ""},
+    {"keyword": "입력", "value": "입력", "job": ""},
 ]
 
 DEFAULT_PARTY_RULES = [
     {
-        "지출대상자": "다플(숙박)",
-        "생년월일(사업자번호)": "207-81-53301",
-        "주소": "서울시 성동구 아차산로 ...",
-        "직업(업종)": "서비스",
-        "전화번호": "1544-6782",
-        "수입지출처구분": "사업자",
-        "내역": "",
+        "지출대상자": "상호명",
+        "생년월일(사업자번호)": "사업자번호",
+        "주소": "입력",
+        "직업(업종)": "입력",
+        "전화번호": "입력",
+        "수입지출처구분": "입력",
+        "내역": "입력",
     }
 ]
 
@@ -399,3 +399,4 @@ if run_btn:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                 )
+
