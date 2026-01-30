@@ -6,6 +6,12 @@ from difflib import SequenceMatcher
 
 from openpyxl import load_workbook
 
+# ✅ .xls 변환용 (설치돼 있으면 사용)
+try:
+    import pandas as pd  # type: ignore
+except Exception:
+    pd = None
+
 # PDF 처리(설치돼 있으면 사용)
 try:
     import pdfplumber  # type: ignore
@@ -127,6 +133,38 @@ def safe_set_cell(ws, row: int, col: int, value: Any, skip_if_filled: bool) -> b
 
 
 # =========================
+# ✅ .xls → .xlsx 변환 (은행내역용)
+# =========================
+def ensure_xlsx_for_openpyxl(path: str, tmp_dir: str) -> str:
+    """
+    openpyxl은 .xls를 못 읽으므로, .xls인 경우 임시로 .xlsx로 변환해서 경로 반환.
+    - 변환은 pandas가 설치되어 있어야 함 (engine: xlrd)
+    """
+    lp = path.lower()
+    if lp.endswith(".xlsx"):
+        return path
+    if not lp.endswith(".xls"):
+        return path  # 알 수 없는 확장자면 그대로 시도
+
+    if pd is None:
+        raise ValueError(
+            "은행내역이 .xls인데 pandas가 설치되어 있지 않아 변환할 수 없습니다. "
+            "requirements.txt에 pandas, xlrd를 추가해 주세요."
+        )
+
+    out_path = os.path.join(tmp_dir, "bank_converted.xlsx")
+
+    # 모든 시트를 그대로 옮김
+    xls = pd.ExcelFile(path, engine="xlrd")
+    with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet_name, engine="xlrd")
+            df.to_excel(writer, index=False, sheet_name=sheet_name)
+
+    return out_path
+
+
+# =========================
 # ✅ PDF/은행 이름 퍼지 매칭용 정규화
 # =========================
 _GATEWAY_PREFIXES = [
@@ -138,27 +176,14 @@ _CORP_WORDS = [
 
 
 def clean_merchant_for_match(name: str) -> str:
-    """
-    'NICE_쏘카_주식회사 쏘카' vs '쏘카' 같은 케이스를 맞추기 위한 정규화.
-    - 결제대행/표시 접두어 제거
-    - 법인표기 제거
-    - 특수문자/구분자 제거 후 붙여쓰기
-    """
     if not name:
         return ""
     s = str(name)
 
-    # x000D, NBSP 제거
     s = s.replace("_x000D_", "").replace("\u00A0", " ")
-
-    # 언더스코어/슬래시 등 구분자를 공백으로
     s = re.sub(r"[_/|·•]+", " ", s)
-
-    # 괄호 내용은 유지하되 괄호 기호는 제거(매칭 방해)
     s = s.replace("(", " ").replace(")", " ")
 
-    # 결제대행 접두어 제거 (단어 단위로 앞부분에 있으면 제거)
-    # 예: "NICE 쏘카 ..." / "NICE_쏘카 ..."
     ss = s.strip()
     for p in _GATEWAY_PREFIXES:
         if ss.upper().startswith(p + " "):
@@ -166,34 +191,26 @@ def clean_merchant_for_match(name: str) -> str:
         elif ss.upper().startswith(p + "_"):
             ss = ss[len(p) + 1 :]
         elif ss.upper().startswith(p):
-            # NICE쏘카처럼 붙은 경우도 일부 처리
-            # 앞에 NICE가 오고 바로 한글/영문/숫자면 제거
             if re.match(rf"^{p}[A-Za-z0-9가-힣]", ss, flags=re.IGNORECASE):
                 ss = ss[len(p) :]
     s = ss
 
-    # 법인표기 제거
     for w in _CORP_WORDS:
         s = s.replace(w, " ")
 
-    # 남은 특수문자 제거
     s = re.sub(r"[^0-9A-Za-z가-힣\s]", " ", s)
-
-    # 공백 정리 후, 공백 제거(붙여쓰기)
     s = re.sub(r"\s+", " ", s).strip()
     s = s.replace(" ", "")
     return s
 
 
 def name_similarity(a: str, b: str) -> float:
-    """0~1 유사도"""
     if not a or not b:
         return 0.0
     return SequenceMatcher(None, a, b).ratio()
 
 
 def is_substring_match(a: str, b: str) -> bool:
-    """짧은 쪽이 긴 쪽에 포함되면 True"""
     if not a or not b:
         return False
     short, long_ = (a, b) if len(a) <= len(b) else (b, a)
@@ -267,7 +284,6 @@ def extract_pdf_fields(pdf_path: str) -> Dict[str, str]:
         if b:
             out["biz_no"] = f"{b.group(1)}-{b.group(2)}-{b.group(3)}"
 
-    # 연락처: 라벨 뒤쪽만 먼저, 아니면 전체에서 첫 전화번호
     m = re.search(r"연락처\s*[: ]?\s*(.+)", text)
     if m:
         line = m.group(1)
@@ -320,9 +336,6 @@ def find_best_row_for_pdf(
     amt_int: int,
     pdf_merchant: str,
 ) -> Tuple[Optional[int], float, str]:
-    """
-    return: (matched_row, best_score, reason)
-    """
     pdf_clean = clean_merchant_for_match(pdf_merchant)
     if not pdf_clean:
         return None, 0.0, "PDF 가맹점명 정규화 결과가 비어있음"
@@ -340,26 +353,21 @@ def find_best_row_for_pdf(
     if not candidates:
         return None, 0.0, "날짜+금액 동일 후보 없음"
 
-    # 1) 기존 방식(띄어쓰기 무시 완전일치)
     pdf_loose = norm_name_loose(pdf_merchant)
     for rr, t in candidates:
         if norm_name_loose(t) == pdf_loose:
             return rr, 1.0, "완전일치(띄어쓰기 무시)"
 
-    # 2) 정규화 후 포함관계 우선
     best_rr = None
     best_score = 0.0
     best_reason = ""
 
     for rr, t in candidates:
         t_clean = clean_merchant_for_match(t)
-
         if not t_clean:
             continue
 
-        # 포함관계면 높은 점수 부여
         if is_substring_match(pdf_clean, t_clean):
-            # 포함관계면 유사도도 계산해서 tie-break
             sim = name_similarity(pdf_clean, t_clean)
             score = max(0.90, sim)
             if score > best_score:
@@ -368,16 +376,12 @@ def find_best_row_for_pdf(
                 best_reason = f"포함관계 매칭 ({t} ↔ {pdf_merchant})"
             continue
 
-        # 3) 유사도 매칭
         sim = name_similarity(pdf_clean, t_clean)
         if sim > best_score:
             best_score = sim
             best_rr = rr
             best_reason = f"유사도 매칭 score={sim:.2f} ({t} ↔ {pdf_merchant})"
 
-    # 최종 승인 기준
-    # - 포함관계면 이미 0.90 이상 부여
-    # - 유사도는 보수적으로 0.62 이상이면 OK
     THRESHOLD = 0.62
     if best_rr is not None and best_score >= THRESHOLD:
         return best_rr, best_score, best_reason
@@ -398,17 +402,23 @@ def run_pipeline(
     desc_rules: List[Dict[str, str]],
     party_rules: List[Dict[str, str]],
     skip_if_already_filled: bool = True,
+    tmp_dir: Optional[str] = None,  # ✅ Streamlit 임시폴더 전달 가능
 ) -> Dict[str, Any]:
     logs: List[str] = []
     no_match: List[Tuple[str, str]] = []
 
+    # ✅ .xls면 .xlsx로 변환해서 진행
+    work_tmp = tmp_dir or os.path.dirname(output_path) or "."
+    bank_path_for_openpyxl = ensure_xlsx_for_openpyxl(bank_path, work_tmp)
+    if bank_path_for_openpyxl != bank_path:
+        logs.append("은행내역 .xls → .xlsx 변환 후 처리했습니다.")
+
     twb = load_workbook(template_path)
-    bwb = load_workbook(bank_path, data_only=True)
+    bwb = load_workbook(bank_path_for_openpyxl, data_only=True)
 
     tws = twb.active
     bws = bwb.active
 
-    # 1) 은행내역 헤더
     bank_required = ["거래일시", "출금금액", "입금금액", "거래내용", "거래기록사항"]
     bank_header_row, bank_map = find_header_row_and_map(bws, bank_required, max_scan_rows=300)
 
@@ -418,7 +428,6 @@ def run_pipeline(
     col_trade_content = bank_map[norm_text("거래내용")]
     col_memo = bank_map[norm_text("거래기록사항")]
 
-    # 2) 기준파일 헤더
     tmpl_header_row, tmpl_map = find_template_header_row_and_map(tws, max_scan_rows=300)
 
     def col_of(name: str) -> int:
@@ -427,7 +436,6 @@ def run_pipeline(
             raise ValueError(f"기준파일에 '{name}' 컬럼이 없습니다.")
         return tmpl_map[k]
 
-    # 기준 컬럼들
     c_account = col_of("*계정")
     c_subject = col_of("*과목")
     c_date = tmpl_map.get(norm_text("*지출일시"), tmpl_map.get(norm_text("*지출일자")))
@@ -438,14 +446,12 @@ def run_pipeline(
     c_target = col_of("*지출대상자")
     c_desc = col_of("*내역")
 
-    # 보강용 컬럼들
     c_biz = tmpl_map.get(norm_text("생년월일(사업자번호)")) or tmpl_map.get(norm_text("생년월일"))
     c_addr = tmpl_map.get(norm_text("주소")) or tmpl_map.get(norm_text("주 소"))
     c_job = tmpl_map.get(norm_text("직업(업종)")) or tmpl_map.get(norm_text("직업"))
     c_phone = tmpl_map.get(norm_text("전화번호"))
     c_party_type = tmpl_map.get(norm_text("*수입지출처구분"))
 
-    # 3) 은행내역 -> 기준파일 추가
     write_start_row = tmpl_header_row + 1
     next_row = find_next_empty_row(tws, c_account, write_start_row)
 
@@ -500,7 +506,6 @@ def run_pipeline(
     logs.append(f"은행내역 반영 완료: {bank_rows_added}행 추가")
     twb.save(output_path)
 
-    # 4) PDF 보강 + 주소 규칙 보강
     pdf_updated_rows = 0
     partyinfo_filled_cells = 0
 
@@ -553,7 +558,6 @@ def run_pipeline(
             no_match.append((fn, f"기준파일 매칭 실패: ({pdf_date}, {amt_int}, {merchant}) / {reason}"))
             continue
 
-        # PDF로 보강
         updated = 0
         if c_addr and info.get("address"):
             if safe_set_cell(tws, matched_row, c_addr, info["address"], skip_if_already_filled):
@@ -569,7 +573,6 @@ def run_pipeline(
             pdf_updated_rows += 1
             logs.append(f"PDF 매칭 성공: {fn} -> row {matched_row} ({reason})")
 
-    # 주소 규칙 보강(완전 동일)
     for rr in range(start_row, tws.max_row + 1):
         target = tws.cell(rr, c_target).value
         if target in (None, ""):
@@ -615,8 +618,7 @@ def run_pipeline(
         for r in range(write_start_row, next_row):
             cell = tws.cell(r, col_income_out)
             if cell.value is None or str(cell.value).strip() == "":
-                  cell.value = "사업자"
-
+                cell.value = "사업자"
 
     twb.save(output_path)
 
@@ -627,4 +629,3 @@ def run_pipeline(
         "partyinfo_filled_cells": partyinfo_filled_cells,
         "no_match": no_match,
     }
-
