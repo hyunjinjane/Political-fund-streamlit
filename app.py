@@ -166,7 +166,7 @@ if "rules_download_version" not in st.session_state:
 # 1) 파일 업로드
 # -------------------------
 st.subheader("1) 파일 업로드")
-bank_file = st.file_uploader("은행내역 업로드 (xlsx)", type=["xlsx"])
+bank_file = st.file_uploader("은행내역 업로드 (xls/xlsx)", type=["xls", "xlsx"])
 pdf_files = st.file_uploader("매출전표 PDF 업로드 (여러 개 가능)", type=["pdf"], accept_multiple_files=True)
 
 st.divider()
@@ -399,4 +399,5 @@ if run_btn:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                 )
+
 
