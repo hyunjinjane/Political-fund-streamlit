@@ -133,6 +133,73 @@ def safe_set_cell(ws, row: int, col: int, value: Any, skip_if_filled: bool) -> b
 
 
 # =========================
+# ✅ 같은 지출대상자끼리 정보 전파
+# =========================
+def propagate_partyinfo_by_payee(
+    ws,
+    start_row: int,
+    last_row: int,
+    col_target: int,
+    cols_to_propagate: List[int],
+    skip_if_already_filled: bool = True,
+) -> int:
+    """
+    같은 지출대상자(col_target)가 여러 행에 있으면,
+    그룹 내에서 가장 많이 채워진 '대표행' 값을 다른 행의 빈칸에 전파.
+    반환: 채운 셀 개수
+    """
+    # 1) 그룹 만들기
+    groups: Dict[str, List[int]] = {}
+    for r in range(start_row, last_row + 1):
+        t = ws.cell(r, col_target).value
+        key = norm_name_loose(t)
+        if not key:
+            continue
+        groups.setdefault(key, []).append(r)
+
+    filled_cells = 0
+
+    # 2) 그룹별로 대표행 선정 후 전파
+    for _, rows in groups.items():
+        if len(rows) <= 1:
+            continue
+
+        best_row = None
+        best_score = -1
+
+        for r in rows:
+            score = 0
+            for c in cols_to_propagate:
+                v = ws.cell(r, c).value
+                if v is not None and str(v).strip() != "":
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_row = r
+
+        # 대표행에 전파할 값이 없으면 스킵
+        if best_row is None or best_score <= 0:
+            continue
+
+        rep_vals = {c: ws.cell(best_row, c).value for c in cols_to_propagate}
+
+        for r in rows:
+            if r == best_row:
+                continue
+            for c in cols_to_propagate:
+                cur = ws.cell(r, c).value
+                if skip_if_already_filled and cur is not None and str(cur).strip() != "":
+                    continue
+                rep = rep_vals.get(c)
+                if rep is None or str(rep).strip() == "":
+                    continue
+                ws.cell(r, c).value = rep
+                filled_cells += 1
+
+    return filled_cells
+
+
+# =========================
 # ✅ .xls → .xlsx 변환 (은행내역용)
 # =========================
 def ensure_xlsx_for_openpyxl(path: str, tmp_dir: str) -> str:
@@ -508,6 +575,7 @@ def run_pipeline(
 
     pdf_updated_rows = 0
     partyinfo_filled_cells = 0
+    same_payee_propagated_cells = 0  # ✅ 추가
 
     twb = load_workbook(output_path)
     tws = twb.active
@@ -524,6 +592,9 @@ def run_pipeline(
         logs.append("pdfplumber 미설치로 PDF 보강을 건너뜁니다.")
         pdf_files = []
 
+    # -------------------------
+    # 1) PDF 보강
+    # -------------------------
     for fn in pdf_files:
         p = os.path.join(pdf_dir, fn)
         info = extract_pdf_fields(p)
@@ -573,6 +644,9 @@ def run_pipeline(
             pdf_updated_rows += 1
             logs.append(f"PDF 매칭 성공: {fn} -> row {matched_row} ({reason})")
 
+    # -------------------------
+    # 2) 주소 규칙(지출대상자 완전 동일)
+    # -------------------------
     for rr in range(start_row, tws.max_row + 1):
         target = tws.cell(rr, c_target).value
         if target in (None, ""):
@@ -608,6 +682,26 @@ def run_pipeline(
             if safe_set_cell(tws, rr, c_desc, rule_desc, skip_if_already_filled):
                 partyinfo_filled_cells += 1
 
+    # -------------------------
+    # ✅ 3) 같은 지출대상자끼리 정보 전파 (PDF 1장만 있어도 나머지 자동 채움)
+    # -------------------------
+    cols_to_propagate: List[int] = []
+    for cc in [c_biz, c_addr, c_phone, c_job, c_party_type, c_desc]:
+        if cc:
+            cols_to_propagate.append(cc)
+
+    if cols_to_propagate:
+        same_payee_propagated_cells = propagate_partyinfo_by_payee(
+            ws=tws,
+            start_row=start_row,
+            last_row=tws.max_row,
+            col_target=c_target,
+            cols_to_propagate=cols_to_propagate,
+            skip_if_already_filled=skip_if_already_filled,
+        )
+        if same_payee_propagated_cells > 0:
+            logs.append(f"동일 지출대상자 전파로 채운 셀 수: {same_payee_propagated_cells}")
+
     logs.append(f"PDF 보강된 행 수: {pdf_updated_rows}")
     logs.append(f"주소규칙/고정정보로 채운 셀 수: {partyinfo_filled_cells}")
 
@@ -627,5 +721,6 @@ def run_pipeline(
         "bank_rows_added": bank_rows_added,
         "pdf_updated_rows": pdf_updated_rows,
         "partyinfo_filled_cells": partyinfo_filled_cells,
+        "same_payee_propagated_cells": same_payee_propagated_cells,  # ✅ 추가
         "no_match": no_match,
     }
