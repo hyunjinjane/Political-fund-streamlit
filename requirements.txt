@@ -1,3 +1,6 @@
 streamlit
 openpyxl
-pymupdf
+pdfplumber
+pdfminer.six
+pandas
+xlrd
