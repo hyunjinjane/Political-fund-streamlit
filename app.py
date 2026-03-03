@@ -166,6 +166,9 @@ def init_session_state() -> None:
     ss.setdefault("desc_rules_draft", ss["desc_rules"])
     ss.setdefault("party_rules_draft", ss["party_rules"])
 
+    # ✅ rules.json 업로드를 1회만 적용하기 위한 플래그
+    ss.setdefault("rules_loaded_once", False)
+
     # 다운로드용
     ss.setdefault("rules_download_bytes", None)
     ss.setdefault("rules_download_version", 0)
@@ -192,8 +195,12 @@ def reset_rules() -> None:
     ss["party_rules"] = DEFAULT_PARTY_RULES
     ss["desc_rules_draft"] = DEFAULT_DESC_RULES
     ss["party_rules_draft"] = DEFAULT_PARTY_RULES
+
     ss["rules_download_bytes"] = None
     ss["rules_download_version"] += 1
+
+    # ✅ 다시 업로드 적용 가능하도록 플래그 리셋
+    ss["rules_loaded_once"] = False
 
 
 # =========================
@@ -277,19 +284,20 @@ st.subheader("3) 규칙 관리")
 st.caption("서버 저장 없음: rules.json은 다운로드해서 보관하고, 필요할 때 업로드해서 사용하세요.")
 
 uploaded_rules = st.file_uploader("rules.json 불러오기 (필요할 때만)", type=["json"], key="rules_json_uploader")
-if uploaded_rules is not None:
+
+# ✅ 업로드 파일이 있더라도 '한 번만' 반영 (st.rerun() 금지)
+if uploaded_rules is not None and not st.session_state["rules_loaded_once"]:
     try:
         data = safe_load_rules_json(uploaded_rules)
         desc_loaded = normalize_table_rows(data["desc_rules"], DESC_COLS)
         party_loaded = normalize_table_rows(data["party_rules"], PARTY_COLS)
         party_loaded = ensure_party_rules_has_desc(party_loaded)
 
-        # ✅ 업로드 즉시 편집 draft에 반영 (pending_rules 제거)
         st.session_state["desc_rules_draft"] = desc_loaded
         st.session_state["party_rules_draft"] = party_loaded
+        st.session_state["rules_loaded_once"] = True
 
         st.success("rules.json을 불러왔습니다. 표에서 수정 후 '변경사항 적용'을 누르세요.")
-        st.rerun()
     except Exception as e:
         st.error(str(e))
 
