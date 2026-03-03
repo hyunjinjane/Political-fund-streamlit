@@ -166,7 +166,7 @@ def init_session_state() -> None:
     ss.setdefault("desc_rules_draft", ss["desc_rules"])
     ss.setdefault("party_rules_draft", ss["party_rules"])
 
-    # ✅ rules.json 업로드를 1회만 적용하기 위한 플래그
+    # rules.json 업로드 1회 적용 플래그
     ss.setdefault("rules_loaded_once", False)
 
     # 다운로드용
@@ -199,7 +199,7 @@ def reset_rules() -> None:
     ss["rules_download_bytes"] = None
     ss["rules_download_version"] += 1
 
-    # ✅ 다시 업로드 적용 가능하도록 플래그 리셋
+    # 다시 업로드 적용 가능하도록
     ss["rules_loaded_once"] = False
 
 
@@ -270,7 +270,6 @@ with a1:
 with a2:
     fixed_subject = st.text_input("*과목(고정값)", value="선거비용의 정치자금")
 
-# 덮어쓰기 방지는 True 고정
 skip_overwrite = True
 st.markdown('<div class="hint">※ 기존 값이 이미 있으면 덮어쓰지 않도록 고정되어 있습니다.</div>', unsafe_allow_html=True)
 
@@ -285,7 +284,7 @@ st.caption("서버 저장 없음: rules.json은 다운로드해서 보관하고,
 
 uploaded_rules = st.file_uploader("rules.json 불러오기 (필요할 때만)", type=["json"], key="rules_json_uploader")
 
-# ✅ 업로드 파일이 있더라도 '한 번만' 반영 (st.rerun() 금지)
+# ✅ 업로드는 1회만 반영 (st.rerun() 없음)
 if uploaded_rules is not None and not st.session_state["rules_loaded_once"]:
     try:
         data = safe_load_rules_json(uploaded_rules)
@@ -305,7 +304,7 @@ st.divider()
 
 
 # =========================
-# 4) 규칙 편집 (다운로드 버튼)
+# 4) 규칙 편집
 # =========================
 st.subheader("4) 규칙 편집")
 st.caption("표 수정 → '변경사항 적용' → 가운데 rules.json 다운로드로 저장하세요.")
@@ -338,10 +337,6 @@ with tab2:
         key="party_rules_editor",
     )
 
-# ✅ rerun 안정성: 현재 편집값을 draft에 계속 저장
-st.session_state["desc_rules_draft"] = edited_desc
-st.session_state["party_rules_draft"] = edited_party
-
 btn_apply, btn_download, btn_reset = st.columns([1.2, 1.2, 0.9], gap="large")
 
 with btn_apply:
@@ -366,7 +361,10 @@ with btn_reset:
     reset_clicked = st.button("♻️ 초기화", use_container_width=True)
 
 if apply_clicked:
-    # ✅ 무조건 "표에서 수정한 값"을 적용
+    # ✅ 여기서만 draft를 저장 (입력 중 튐 방지)
+    st.session_state["desc_rules_draft"] = edited_desc
+    st.session_state["party_rules_draft"] = edited_party
+
     apply_rules(edited_desc, edited_party)
     st.success("적용 완료! 이제 가운데에서 rules.json을 다운로드하세요.")
     st.rerun()
@@ -390,19 +388,16 @@ if run_btn:
         st.error("은행내역 파일은 필수입니다.")
         st.stop()
 
-    # 실행 직전에 clean
     desc_rules_clean = normalize_table_rows(st.session_state["desc_rules"], DESC_COLS)
     party_rules_clean = normalize_table_rows(st.session_state["party_rules"], PARTY_COLS)
     party_rules_clean = ensure_party_rules_has_desc(party_rules_clean)
 
     with st.spinner("처리 중..."):
         with tempfile.TemporaryDirectory(prefix="politics_") as tmp:
-            # 기준 템플릿 복사
             template_path = os.path.join(tmp, "template.xlsx")
             with open(TEMPLATE_FIXED_PATH, "rb") as src, open(template_path, "wb") as dst:
                 dst.write(src.read())
 
-            # 은행파일 저장(여기서 xls면 xlsx로 변환)
             bank_upload_bytes = bank_file.getvalue()
             bank_name = (bank_file.name or "").lower()
             bank_path = os.path.join(tmp, "bank.xlsx")
@@ -419,7 +414,6 @@ if run_btn:
                 with open(bank_path, "wb") as f:
                     f.write(bank_upload_bytes)
 
-            # pdf 저장
             pdf_dir = os.path.join(tmp, "pdfs")
             os.makedirs(pdf_dir, exist_ok=True)
             for pf in pdf_files or []:
@@ -437,7 +431,7 @@ if run_btn:
                 fixed_subject=fixed_subject,
                 desc_rules=desc_rules_clean,
                 party_rules=party_rules_clean,
-                skip_if_already_filled=skip_overwrite,  # ✅ True 고정
+                skip_if_already_filled=skip_overwrite,
             )
 
             st.success("완료!")
