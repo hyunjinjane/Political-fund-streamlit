@@ -87,19 +87,22 @@ def _norm_for_match(x) -> str:
 
     return s
 
+
 def map_payment_method(trade_content):
     s = _norm_for_match(trade_content)
 
-    # ✅ S-OO은행 패턴 전부 계좌입금
-    if re.search(r"S[가-힣]+은행", s) or "스마트당행" in s or "폰하나은행" in s:
+    # ✅ 계좌입금: S-OO은행 / 폰OO은행 / 스마트당행
+    if re.search(r"S[가-힣]+은행", s):
+        return "계좌입금"
+    if "스마트당행" in s:
+        return "계좌입금"
+    if "폰" in s and "은행" in s:   # ✅ 폰하나은행, 폰우리은행 등 전부 커버
         return "계좌입금"
 
     if "NH체크" in s:
         return "체크카드"
-
     if "자동이체" in s:
         return "기타"
-
     return "체크카드"
     
 
@@ -757,6 +760,7 @@ def run_pipeline(
         "same_payee_propagated_cells": same_payee_propagated_cells,  # ✅ 추가
         "no_match": no_match,
     }
+
 
 
 
