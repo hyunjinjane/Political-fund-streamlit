@@ -73,7 +73,7 @@ def to_int_money(value) -> int:
 
 def map_payment_method(trade_content):
     s = "" if trade_content is None else str(trade_content)
-    if "S-신한은행" in s:
+    if "S-신한은행" in s or "스마트당행" in s:
         return "계좌입금"
     if "NH체크" in s:
         return "체크카드"
@@ -724,3 +724,4 @@ def run_pipeline(
         "same_payee_propagated_cells": same_payee_propagated_cells,  # ✅ 추가
         "no_match": no_match,
     }
+
