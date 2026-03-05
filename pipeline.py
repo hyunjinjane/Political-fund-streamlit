@@ -69,17 +69,33 @@ def to_int_money(value) -> int:
     if s == "" or s == "-":
         return 0
     return int(s)
-
+    
+_DASH_MAP = str.maketrans({
+    "‐": "-",  # U+2010
+    "-": "-",  # U+2011 (non-breaking hyphen)
+    "‒": "-",  # U+2012
+    "–": "-",  # U+2013 (en dash)
+    "—": "-",  # U+2014 (em dash)
+    "−": "-",  # U+2212 (minus)
+    "﹣": "-",  # U+FE63
+    "－": "-",  # U+FF0D (fullwidth hyphen-minus)
+})
 
 def map_payment_method(trade_content):
     s = "" if trade_content is None else str(trade_content)
-    if "S-신한은행" in s or "스마트당행" in s:
+
+    # ✅ 하이픈/대시 통일 + 공백 제거
+    s = s.translate(_DASH_MAP)
+    s = re.sub(r"\s+", "", s)
+
+    if ("S-신한은행" in s) or ("스마트당행" in s):
         return "계좌입금"
     if "NH체크" in s:
         return "체크카드"
     if "자동이체" in s:
         return "기타"
     return "체크카드"
+
 
 
 def find_header_row_and_map(ws, required_headers, max_scan_rows=300):
@@ -724,4 +740,5 @@ def run_pipeline(
         "same_payee_propagated_cells": same_payee_propagated_cells,  # ✅ 추가
         "no_match": no_match,
     }
+
 
