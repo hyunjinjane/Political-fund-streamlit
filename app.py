@@ -6,6 +6,7 @@ from typing import Any
 
 import streamlit as st
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE  # ✅ 추가
 
 from pipeline import run_pipeline
 
@@ -58,6 +59,13 @@ DEFAULT_PARTY_RULES = [
 # =========================
 # 유틸
 # =========================
+def sanitize_excel_text(x: Any) -> str:
+    """openpyxl에서 금지하는 제어문자 제거"""
+    if x is None:
+        return ""
+    return ILLEGAL_CHARACTERS_RE.sub("", str(x))
+
+
 def normalize_table_rows(rows: list[dict], columns: list[str]) -> list[dict]:
     """
     - 컬럼 누락 시 빈 문자열
@@ -118,7 +126,7 @@ def build_no_match_excel(no_match: list[tuple[str, str]]) -> bytes:
     ws.title = "PDF_매칭실패"
     ws.append(["PDF파일명", "실패사유"])
     for name, reason in no_match:
-        ws.append([name, reason])
+        ws.append([sanitize_excel_text(name), sanitize_excel_text(reason)])  # ✅ 여기 수정
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
@@ -199,7 +207,6 @@ def reset_rules() -> None:
     ss["rules_download_bytes"] = None
     ss["rules_download_version"] += 1
 
-    # 다시 업로드 적용 가능하도록
     ss["rules_loaded_once"] = False
 
 
@@ -284,7 +291,7 @@ st.caption("서버 저장 없음: rules.json은 다운로드해서 보관하고,
 
 uploaded_rules = st.file_uploader("rules.json 불러오기 (필요할 때만)", type=["json"], key="rules_json_uploader")
 
-# ✅ 업로드는 1회만 반영 (st.rerun() 없음)
+# 업로드는 1회만 반영 (st.rerun 없음)
 if uploaded_rules is not None and not st.session_state["rules_loaded_once"]:
     try:
         data = safe_load_rules_json(uploaded_rules)
@@ -361,7 +368,7 @@ with btn_reset:
     reset_clicked = st.button("♻️ 초기화", use_container_width=True)
 
 if apply_clicked:
-    # ✅ 여기서만 draft를 저장 (입력 중 튐 방지)
+    # 여기서만 draft 저장 (입력 중 튐 방지)
     st.session_state["desc_rules_draft"] = edited_desc
     st.session_state["party_rules_draft"] = edited_party
 
