@@ -1,6 +1,7 @@
 import os
 import re
 import datetime
+import unicodedata
 from typing import Any, Dict, List, Tuple, Optional
 from difflib import SequenceMatcher
 
@@ -69,17 +70,48 @@ def to_int_money(value) -> int:
     if s == "" or s == "-":
         return 0
     return int(s)
-    
+
+def _norm_for_match(x) -> str:
+    if x is None:
+        return ""
+    s = str(x)
+
+    # 유니코드 정규화(전각/호환문자 통일)
+    s = unicodedata.normalize("NFKC", s)
+
+    # 제어문자/제로폭 문자 제거 (엑셀/복사에서 자주 섞임)
+    s = re.sub(r"[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]", "", s)
+
+    # 공백/기호 전부 제거하고 한글/영문/숫자만 남김
+    s = re.sub(r"[^0-9A-Za-z가-힣]", "", s)
+
+    return s
 
 def map_payment_method(trade_content):
-    s = "" if trade_content is None else str(trade_content)
-    if ("S-신한은행" in s) or ("스마트당행" in s):
+    s = _norm_for_match(trade_content)
+
+    # ✅ 'S-신한은행' 변형들: S신한은행 / S-신한은행 / S_신한은행 / S – 신한은행 … 전부 포함
+    if "S신한은행" in s or "스마트당행" in s:
         return "계좌입금"
+
     if "NH체크" in s:
         return "체크카드"
+
     if "자동이체" in s:
         return "기타"
+
     return "체크카드"
+    
+
+#def map_payment_method(trade_content):
+#    s = "" if trade_content is None else str(trade_content)
+#    if ("S-신한은행" in s) or ("스마트당행" in s):
+#        return "계좌입금"
+#    if "NH체크" in s:
+#        return "체크카드"
+#    if "자동이체" in s:
+#        return "기타"
+#    return "체크카드"
 
 
 
@@ -725,6 +757,7 @@ def run_pipeline(
         "same_payee_propagated_cells": same_payee_propagated_cells,  # ✅ 추가
         "no_match": no_match,
     }
+
 
 
 
