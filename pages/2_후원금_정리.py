@@ -3,8 +3,6 @@ import streamlit as st
 from donation_program_page import render_program_tab
 from donation_center_page import render_center_tab
 from donation_report_page import render_report_tab
-from donation_hometax_page import render_hometax_tab
-
 
 st.set_page_config(page_title="후원금 정리", page_icon="💰", layout="wide")
 
@@ -21,5 +19,3 @@ with tab2:
 with tab3:
     render_report_tab()
 
-with tab4:
-    render_hometax_tab()
