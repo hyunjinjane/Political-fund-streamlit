@@ -253,7 +253,7 @@ st.markdown(
 init_session_state()
 
 st.title("정치자금 지출 정리 자동화")
-st.caption("은행내역(xlsx) + 매출전표(PDF)를 기준파일 형식으로 자동 정리합니다.")
+st.caption("은행내역(xlsx) + 매출전표(PDF)를 기준파일 형식으로 자동 정리합니다.~~~~")
 
 if not os.path.exists(TEMPLATE_FIXED_PATH):
     st.error(
