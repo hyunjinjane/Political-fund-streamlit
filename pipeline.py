@@ -98,23 +98,15 @@ def map_payment_method(trade_content):
         return "계좌입금"
     if "폰" in s and "은행" in s:   # ✅ 폰하나은행, 폰우리은행 등 전부 커버
         return "계좌입금"
+    if "예금이자" in s or "결산소득세" in s or "결산지방세" in s:
+        return "계좌입금"
 
     if "NH체크" in s:
         return "체크카드"
     if "자동이체" in s:
         return "기타"
     return "체크카드"
-    
 
-#def map_payment_method(trade_content):
-#    s = "" if trade_content is None else str(trade_content)
-#    if ("S-신한은행" in s) or ("스마트당행" in s):
-#        return "계좌입금"
-#    if "NH체크" in s:
-#        return "체크카드"
-#    if "자동이체" in s:
-#        return "기타"
-#    return "체크카드"
 
 
 
@@ -184,7 +176,6 @@ def propagate_partyinfo_by_payee(
     그룹 내에서 가장 많이 채워진 '대표행' 값을 다른 행의 빈칸에 전파.
     반환: 채운 셀 개수
     """
-    # 1) 그룹 만들기
     groups: Dict[str, List[int]] = {}
     for r in range(start_row, last_row + 1):
         t = ws.cell(r, col_target).value
@@ -195,7 +186,6 @@ def propagate_partyinfo_by_payee(
 
     filled_cells = 0
 
-    # 2) 그룹별로 대표행 선정 후 전파
     for _, rows in groups.items():
         if len(rows) <= 1:
             continue
@@ -213,7 +203,6 @@ def propagate_partyinfo_by_payee(
                 best_score = score
                 best_row = r
 
-        # 대표행에 전파할 값이 없으면 스킵
         if best_row is None or best_score <= 0:
             continue
 
@@ -247,7 +236,7 @@ def ensure_xlsx_for_openpyxl(path: str, tmp_dir: str) -> str:
     if lp.endswith(".xlsx"):
         return path
     if not lp.endswith(".xls"):
-        return path  # 알 수 없는 확장자면 그대로 시도
+        return path
 
     if pd is None:
         raise ValueError(
@@ -257,7 +246,6 @@ def ensure_xlsx_for_openpyxl(path: str, tmp_dir: str) -> str:
 
     out_path = os.path.join(tmp_dir, "bank_converted.xlsx")
 
-    # 모든 시트를 그대로 옮김
     xls = pd.ExcelFile(path, engine="xlrd")
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         for sheet_name in xls.sheet_names:
@@ -510,7 +498,6 @@ def run_pipeline(
     logs: List[str] = []
     no_match: List[Tuple[str, str]] = []
 
-    # ✅ .xls면 .xlsx로 변환해서 진행
     work_tmp = tmp_dir or os.path.dirname(output_path) or "."
     bank_path_for_openpyxl = ensure_xlsx_for_openpyxl(bank_path, work_tmp)
     if bank_path_for_openpyxl != bank_path:
@@ -584,8 +571,20 @@ def run_pipeline(
         else:
             out_amount = 0
 
+        memo_text = "" if memo is None else str(memo).strip()
+        trade_text = "" if trade_content is None else str(trade_content).strip()
+
         out_method = map_payment_method(trade_content)
-        out_target = "" if memo is None else str(memo)
+
+        # ✅ 거래기록사항이 비어 있으면
+        # *내역 = 거래내용
+        # *지출대상자 = 농협
+        if memo_text == "":
+            out_target = "농협"
+            fallback_desc = trade_text
+        else:
+            out_target = memo_text
+            fallback_desc = ""
 
         auto_desc, auto_job = apply_desc_rules(out_target, desc_rules)
 
@@ -598,6 +597,8 @@ def run_pipeline(
 
         if auto_desc:
             safe_set_cell(tws, next_row, c_desc, auto_desc, skip_if_already_filled)
+        elif fallback_desc:
+            safe_set_cell(tws, next_row, c_desc, fallback_desc, skip_if_already_filled)
 
         if c_job and auto_job:
             safe_set_cell(tws, next_row, c_job, auto_job, skip_if_already_filled)
@@ -611,7 +612,7 @@ def run_pipeline(
 
     pdf_updated_rows = 0
     partyinfo_filled_cells = 0
-    same_payee_propagated_cells = 0  # ✅ 추가
+    same_payee_propagated_cells = 0
 
     twb = load_workbook(output_path)
     tws = twb.active
@@ -628,9 +629,6 @@ def run_pipeline(
         logs.append("pdfplumber 미설치로 PDF 보강을 건너뜁니다.")
         pdf_files = []
 
-    # -------------------------
-    # 1) PDF 보강
-    # -------------------------
     for fn in pdf_files:
         p = os.path.join(pdf_dir, fn)
         info = extract_pdf_fields(p)
@@ -680,9 +678,6 @@ def run_pipeline(
             pdf_updated_rows += 1
             logs.append(f"PDF 매칭 성공: {fn} -> row {matched_row} ({reason})")
 
-    # -------------------------
-    # 2) 주소 규칙(지출대상자 완전 동일)
-    # -------------------------
     for rr in range(start_row, tws.max_row + 1):
         target = tws.cell(rr, c_target).value
         if target in (None, ""):
@@ -718,9 +713,6 @@ def run_pipeline(
             if safe_set_cell(tws, rr, c_desc, rule_desc, skip_if_already_filled):
                 partyinfo_filled_cells += 1
 
-    # -------------------------
-    # ✅ 3) 같은 지출대상자끼리 정보 전파 (PDF 1장만 있어도 나머지 자동 채움)
-    # -------------------------
     cols_to_propagate: List[int] = []
     for cc in [c_biz, c_addr, c_phone, c_job, c_party_type, c_desc]:
         if cc:
@@ -741,7 +733,6 @@ def run_pipeline(
     logs.append(f"PDF 보강된 행 수: {pdf_updated_rows}")
     logs.append(f"주소규칙/고정정보로 채운 셀 수: {partyinfo_filled_cells}")
 
-    # ✅ 수입지출처구분 기본값 채우기 (가장 마지막)
     income_out_key = norm_text("*수입지출처구분")
     if income_out_key in tmpl_map:
         col_income_out = tmpl_map[income_out_key]
@@ -757,12 +748,6 @@ def run_pipeline(
         "bank_rows_added": bank_rows_added,
         "pdf_updated_rows": pdf_updated_rows,
         "partyinfo_filled_cells": partyinfo_filled_cells,
-        "same_payee_propagated_cells": same_payee_propagated_cells,  # ✅ 추가
+        "same_payee_propagated_cells": same_payee_propagated_cells,
         "no_match": no_match,
     }
-
-
-
-
-
-
