@@ -107,10 +107,16 @@ def ensure_party_rules_has_desc(rows: list[dict]) -> list[dict]:
 
 def safe_load_rules_json(uploaded_file) -> dict:
     raw = uploaded_file.getvalue()
-    try:
-        data = json.loads(raw.decode("utf-8"))
-    except Exception as e:
-        raise ValueError(f"JSON 파싱 실패: {e}")
+
+    last_error = None
+    for enc in ["utf-8-sig", "utf-8", "cp949", "euc-kr"]:
+        try:
+            data = json.loads(raw.decode(enc))
+            break
+        except Exception as e:
+            last_error = e
+    else:
+        raise ValueError(f"JSON 파싱 실패: {last_error}")
 
     if not isinstance(data, dict):
         raise ValueError("rules.json 최상위는 dict여야 합니다.")
