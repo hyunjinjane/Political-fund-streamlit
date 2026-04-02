@@ -20,8 +20,8 @@ st.set_page_config(
 # =========================
 # 기준파일 고정 경로
 # =========================
-# BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# TEMPLATE_FIXED_PATH = os.path.join(BASE_DIR, "data", "input", "정치자금_지출.xlsx")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMPLATE_FIXED_PATH = os.path.join(BASE_DIR, "data", "input", "정치자금_지출.xlsx")
 
 
 # =========================
