@@ -152,14 +152,17 @@ def xls_to_xlsx_bytes(xls_bytes: bytes) -> bytes:
     try:
         import pandas as pd  # type: ignore
     except Exception:
-        raise RuntimeError("xls 변환을 위해 pandas가 필요합니다. requirements.txt에 pandas를 추가하세요.")
+        raise RuntimeError(
+            "xls 변환을 위해 pandas가 필요합니다. requirements.txt에 pandas를 추가하세요."
+        )
 
     try:
         df = pd.read_excel(BytesIO(xls_bytes), engine="xlrd")
     except Exception as e:
         raise RuntimeError(
-            "xls 파일을 읽을 수 없습니다. (xlrd 필요)\n"
-            "requirements.txt에 xlrd==2.0.1 을 추가하고 다시 배포/설치하세요.\n"
+            "xls 파일을 읽을 수 없습니다.\n"
+            "- xlrd가 설치되어 있어도 파일 자체가 비표준 xls이거나 손상된 경우 이 오류가 날 수 있습니다.\n"
+            "- 가능하면 해당 파일을 Excel에서 열어 .xlsx로 다시 저장한 뒤 업로드해 주세요.\n"
             f"원인: {e}"
         )
 
@@ -168,6 +171,7 @@ def xls_to_xlsx_bytes(xls_bytes: bytes) -> bytes:
     wb = _WB()
     ws = wb.active
     ws.append(list(df.columns))
+
     for row in df.itertuples(index=False):
         ws.append(list(row))
 
