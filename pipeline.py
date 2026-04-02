@@ -496,6 +496,7 @@ def run_pipeline(
     tmp_dir: Optional[str] = None,  # ✅ Streamlit 임시폴더 전달 가능
 ) -> Dict[str, Any]:
     logs: List[str] = []
+    logs.append("### pipeline 최신버전 실행됨 ###")
     no_match: List[Tuple[str, str]] = []
 
     work_tmp = tmp_dir or os.path.dirname(output_path) or "."
