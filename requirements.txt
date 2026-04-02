@@ -4,3 +4,4 @@ pdfplumber
 pdfminer.six
 pandas
 xlrd
+xlrd==2.0.1
