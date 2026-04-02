@@ -274,7 +274,7 @@ st.subheader("1) 파일 업로드")
 
 up_c1, up_c2 = st.columns([1.1, 1.3], gap="large")
 with up_c1:
-    bank_file = st.file_uploader("은행내역 업로드 (xls/xlsx)", type=["xls", "xlsx"])
+    bank_file = st.file_uploader("은행내역 업로드 (xlsx 형식만 가능)", type=["xls", "xlsx"])
 with up_c2:
     pdf_files = st.file_uploader("매출전표 PDF 업로드 (여러 개 가능)", type=["pdf"], accept_multiple_files=True)
     st.markdown('<div class="hint">PDF가 없으면 주소 규칙으로 채우는 방식만 적용됩니다.</div>', unsafe_allow_html=True)
